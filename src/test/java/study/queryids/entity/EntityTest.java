@@ -1,7 +1,11 @@
 package study.queryids.entity;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Predicate;
+import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.PersistenceContext;
@@ -19,6 +23,7 @@ import study.queryids.domain.Team;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static study.queryids.domain.QMember.member;
 import static study.queryids.domain.QTeam.team;
 
@@ -174,4 +179,116 @@ public class EntityTest {
                 .containsExactly("memberA", "memberB");
     }
 
+    /**
+     * Team A member count
+     */
+    @Test
+    void subQuery() {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        QMember subMember = new QMember("member");
+        Tuple tuple = query.select(
+                        team.name,
+                        JPAExpressions.select(subMember.count())
+                                .from(subMember)
+                                .where(subMember.team.name.eq(team.name))
+                )
+                .from(team)
+                .where(team.name.eq("teamA"))
+                .fetchOne();
+
+
+        System.out.println("tuple -->" + tuple);
+    }
+
+    @Test
+    void basicCase() {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        List<String> fetch = query.select(member.age.when(10).then("열살")
+                        .when(20).then("스물살")
+                        .otherwise("기타"))
+                .from(member).fetch();
+        for (String s : fetch) {
+            System.out.println("s ==>" + s);
+        }
+    }
+
+    @Test
+    void complexCase() {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        List<String> fetch = query.select(new CaseBuilder()
+                .when(member.age.between(0, 10)).then("0~10")
+                .when(member.age.between(0, 20)).then("0~20").otherwise("기타"))
+                .from(member).fetch();
+        for (String s : fetch) {
+            System.out.println("s -->" + s);
+        }
+    }
+
+    @Test
+    void searchMember1() {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        List<Member> memberA = searchMember1("memberA", 10);
+        for (Member member1 : memberA) {
+            System.out.println("member1 --> " + member1.getUsername());
+        }
+    }
+
+    @Test
+    void searchMember2() {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        List<Member> memberA = searchMember2("memberA", 10);
+        for (Member member1 : memberA) {
+            System.out.println("member1 --> " + member1.getUsername());
+        }
+    }
+
+
+    private List<Member> searchMember1(String usernameCond, Integer ageCond) {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+
+        BooleanBuilder builder = new BooleanBuilder();
+        if (usernameCond != null) {
+            builder.and(member.username.eq(usernameCond));
+        }
+
+        if (ageCond != null) {
+            builder.and(member.age.eq(ageCond));
+        }
+
+        return query.selectFrom(member)
+                .where(builder).fetch();
+    }
+
+    @Test
+    void bulkUpdate() {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        long count = query.update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+    }
+
+    /**
+     * usernameCond => null 이면 무시
+     * @param usernameCond
+     * @param ageCond
+     * @return
+     */
+    private List<Member> searchMember2(String usernameCond, Integer ageCond) {
+        JPAQueryFactory query = new JPAQueryFactory(em);
+        return query.selectFrom(member)
+                .where(usernameEq(usernameCond), ageEq(ageCond)).fetch();
+    }
+
+    private Predicate usernameEq(String usernameCond) {
+        if (usernameCond == null) {
+            return null;
+        }
+        // usernameCond != null ? member.username.eq(usernameCond) : null
+        return member.username.eq(usernameCond);
+    }
+
+    private Predicate ageEq(Integer ageCond) {
+        return ageCond != null ? member.age.eq(ageCond) : null;
+    }
 }
